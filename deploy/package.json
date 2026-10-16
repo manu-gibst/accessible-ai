@@ -1,0 +1,13 @@
+{
+  "name": "accessible-ai-hosting",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "4.151.0"
+  }
+}

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102c2b">
+  <title>Accessible AI · Image to answer</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #163431; background: #f3f4ed; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 680px; margin: auto; padding: 32px 20px 64px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .brand { font-size: 14px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .badge { font-size: 13px; border: 1px solid #bdc9c1; padding: 7px 12px; border-radius: 30px; }
+    h1 { font-size: clamp(34px, 8vw, 52px); line-height: 1.05; letter-spacing: -.045em; margin: 45px 0 16px; }
+    p { line-height: 1.6; color: #53665f; }
+    section { border: 1px solid #d5ddd2; border-radius: 20px; background: #fffef9; padding: 24px; margin-top: 24px; }
+    h2 { font-size: 19px; margin: 0 0 16px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    button, .file-button { font: inherit; font-weight: 650; border-radius: 12px; padding: 13px 18px; cursor: pointer; min-height: 48px; }
+    button { border: 0; background: #1e5c50; color: white; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .file-button { background: #e9eee3; border: 1px solid #ccd8c8; display: inline-block; }
+    .file-button:focus-within { outline: 3px solid #1e5c50; outline-offset: 3px; }
+    .file-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+    label.instructions { display: block; font-size: 14px; font-weight: 650; margin: 22px 0 8px; }
+    textarea { width: 100%; font: inherit; padding: 12px; border: 1px solid #b7c7bc; border-radius: 10px; background: white; color: inherit; }
+    textarea { resize: vertical; }
+    :focus-visible { outline: 3px solid #268977; outline-offset: 3px; }
+    #preview { width: 100%; max-height: 320px; object-fit: contain; border-radius: 10px; background: #eef0e9; margin-top: 18px; }
+    #send { width: 100%; margin-top: 16px; }
+    #status { margin-bottom: 12px; }
+    progress { width: 100%; accent-color: #1e5c50; }
+    #response { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line-height: 1.6; max-height: 360px; overflow: auto; }
+    .small { font-size: 13px; }
+    #error { color: #a02920; }
+    [hidden] { display: none !important; }
+    footer { margin-top: 22px; }
+  </style>
+</head>
+<body>
+<main>
+  <header><span class="brand">Accessible AI</span><span id="connection" class="badge" role="status">Connecting…</span></header>
+  <h1>A picture in.<br>An answer at your pace.</h1>
+  <p>Send a photo to Claude, then type the answer on your computer one keypress at a time.</p>
+  <section>
+    <h2>1. Add your image</h2>
+    <div class="actions">
+      <label class="file-button">Take a photo<input id="camera" type="file" accept="image/*" capture="environment"></label>
+      <label class="file-button">Choose a picture<input id="file" type="file" accept="image/*"></label>
+    </div>
+    <img id="preview" alt="Selected image preview" hidden>
+    <p id="filename" class="small">JPEG, PNG, or WebP. Up to 10 MB.</p>
+    <label class="instructions" for="prompt">What should Claude do? (optional)</label>
+    <textarea id="prompt" rows="3" maxlength="8000" placeholder="Answer the question in this image…"></textarea>
+    <button id="send" disabled>Get answer</button>
+    <p id="error" role="alert" hidden></p>
+  </section>
+  <section aria-labelledby="answer-heading">
+    <h2 id="answer-heading">2. Your answer</h2>
+    <p id="status" role="status" aria-live="polite">Waiting for an image.</p>
+    <progress id="progress" max="1" value="0" aria-label="Response typing progress"></progress>
+    <p id="count" class="small">0 characters typed</p>
+    <pre id="response">Your answer will appear here.</pre>
+  </section>
+  <footer><p class="small">On your computer: select a textbox, hold the pointer in the bottom-left corner, then press keys to advance the answer. Escape pauses. The pointer moves to the center when finished.</p></footer>
+</main>
+<script>
+  const element = id => document.getElementById(id);
+  function clearOldFragment() {
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  }
+  clearOldFragment();
+  addEventListener('hashchange', clearOldFragment);
+  let socket, imageFile, previewUrl, phase = 'idle', reconnectTimer, uploading = false;
+  function showError(message) { element('error').textContent = message; element('error').hidden = false; }
+  function updateButton() { element('send').disabled = uploading || !imageFile || socket?.readyState !== WebSocket.OPEN || ['generating', 'typing'].includes(phase); }
+  function connect() {
+    clearTimeout(reconnectTimer);
+    element('connection').textContent = 'Connecting…';
+    socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    socket.onmessage = event => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'error') { uploading = false; showError(message.message); updateButton(); return; }
+      if (message.type !== 'status') return;
+      uploading = false;
+      element('error').hidden = true;
+      element('connection').textContent = 'Connected';
+      phase = message.phase;
+      element('status').textContent = message.message;
+      element('progress').max = message.total || 1;
+      element('progress').value = message.position;
+      element('count').textContent = `${message.position} / ${message.total} characters typed`;
+      element('response').textContent = message.response || 'Your answer will appear here.';
+      updateButton();
+    };
+    socket.onclose = () => {
+      uploading = false;
+      element('connection').textContent = 'Disconnected'; updateButton();
+      reconnectTimer = setTimeout(connect, 2000);
+    };
+    socket.onerror = () => { element('connection').textContent = 'Connection failed'; };
+  }
+  function selectImage(event) {
+    const selected = event.target.files[0];
+    if (!selected) return;
+    if (selected.size > 10 * 1024 * 1024) { showError('Image exceeds 10 MB. Choose a smaller photo.'); return; }
+    imageFile = selected;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(selected);
+    element('preview').src = previewUrl; element('preview').hidden = false;
+    element('filename').textContent = `${selected.name} · ${(selected.size / 1024 / 1024).toFixed(1)} MB`;
+    element('error').hidden = true; updateButton();
+  }
+  element('camera').onchange = selectImage;
+  element('file').onchange = selectImage;
+  element('send').onclick = async () => {
+    uploading = true; updateButton(); element('error').hidden = true;
+    try {
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = () => reject(new Error('Unable to read this image.'));
+        reader.readAsDataURL(imageFile);
+      });
+      socket.send(JSON.stringify({ type: 'image', data, prompt: element('prompt').value }));
+    } catch (error) { uploading = false; showError(error.message); }
+    updateButton();
+  };
+  connect();
+</script>
+</body>
+</html>

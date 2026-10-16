@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "accessible-ai-manu",
+  "main": "worker.mjs",
+  "account_id": "060fa80aeddf600ba79e2448fe2c19c5",
+  "compatibility_date": "2026-10-15",
+  "workers_dev": false,
+  "routes": [{ "pattern": "manu.wiphk.com", "custom_domain": true }],
+  "assets": {
+    "directory": "../accessible_ai/web",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  }
+}
